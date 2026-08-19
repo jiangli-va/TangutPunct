@@ -45,7 +45,6 @@
 - 位置 F1 反映"停顿点找得准不准"，类别 Micro-F1 反映"七类标点分得对不对"（grade=2 仅区分句内/句末）。
 - E9 相比 CRF 基线，位置 F1 提升约 7 个百分点，类别 Micro-F1（grade=1）提升约 9 个百分点；位置辅助任务 + 共享编码器消除了硬级联中"上游漏标则下游无法纠正"的问题。
 - 经书文献表现显著优于世俗文献（如 E9 经书位置 F1 ≈ 0.80，世俗 ≈ 0.65），与世俗文献数据量少、题材多样、风格差异大有关。
-- 更多逐类别指标与混淆矩阵见 `outputs_*/**/results.md`，完整实验过程见 `log.md`。
 
 ## 文件结构
 
@@ -59,7 +58,7 @@ xixia_senseg/
 ├── reporting_main.py      # 主实验报告（结果表、逐类指标）
 ├── requirements.txt
 ├── configs/               # YAML 实验配置（experiment_{a,b,c,d,e,f}.yaml）
-├── corpus/                # 原始语料与清洗后语料（*.len25.txt）
+├── corpus/                # 训练语料（不公开）
 ├── data/                  # 语料读取、标签、五折划分、数据增强
 ├── models/                # CRF、n-gram、BiLSTM、Transformer、TangutEncoder 等模型
 ├── pretraining/           # D1 上下文 MLM、D2 词感知预训练、D5 预训练标点
