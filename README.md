@@ -114,8 +114,3 @@ python run.py train --experiment e9 \
 | `--checkpoint` | D 组下游评测所用 `best_model.pt` |
 | `--init-from` | D3/D4/D5 的初始化来源：`d1`/`d2` |
 | `--debug` | 显示调试信息 |
-
-### 复现最终模型（E9）
-
-1. 先完成 D2 词感知预训练（`python run.py train --experiment d2 --config configs/experiment_d.yaml --output outputs_d`），得到编码器 checkpoint；
-2. 再运行 E9（见上），E 组配置中的 `checkpoint` 指向该预训练权重；需要外部词典/词性特征时，请同时拥有姊妹项目 [`xixia_seg`](../xixia_seg)（西夏文分词与词性标注模型）及其 `corpus/西夏文词典.json` 等资源。
