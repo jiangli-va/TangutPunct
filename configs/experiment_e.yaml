@@ -1,0 +1,228 @@
+seed: 42
+folds: 5
+dev_ratio: 0.125
+# 与D2预训练位置嵌入及D4正式实验保持一致。
+max_sequence_length: 128
+
+data:
+  sources:
+    - path: corpus/all_jingshu_len25.txt
+      domain: jingshu
+    - path: corpus/all_shisu_len25.txt
+      domain: shisu
+  missing_volume_numbers: []
+  missing_characters: ["□", "@", "…"]
+  ignored_editorial_symbols: ["√", "×", "△"]
+
+punctuation:
+  sentence_pause: ["。", "？", "！"]
+  intra_sentence_pause: ["，", "、", "；", "："]
+  structural: ["“", "”", "‘", "’", "《", "》"]
+
+pretraining:
+  stage: context_mlm
+  validation_ratio: 0.10
+  min_sequence_length: 4
+  max_sequence_length: 128
+  mask_ratio: 0.15
+  span_mask_probability: 0.50
+  span_lengths: [2, 3, 4]
+  mask_replace_probability: 0.80
+  random_replace_probability: 0.10
+  embedding_dim: 192
+  layers: 3
+  heads: 4
+  ff_dim: 768
+  dropout: 0.15
+  batch_size: 32
+  max_steps: 50000
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  warmup_ratio: 0.10
+  eval_interval: 200
+  log_interval: 50
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 1.0
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+  # E0/E1/E2/E3均以从D2初始化的D4为基础模型。
+  checkpoint: outputs_d/D2/tangut_encoder_word/best_model.pt
+  downstream_encoder_learning_rate: 0.00005
+  downstream_head_learning_rate: 0.001
+  downstream_freeze_epochs: 1
+
+# E1复用D2的候选词构造口径；仅输出领域分布，不输出词位、词长、
+# 来源或可靠度。E2另从固定辞书构造软格网，不读取这里的统计候选。
+word_pretraining:
+  checkpoint: outputs_d/D2/tangut_encoder_word/best_model.pt
+  dictionary_path: ../xixia_seg/corpus/西夏文词典.json
+  tongyin_path: ../xixia_seg/corpus/同音.json
+  candidate_lengths: [2, 3, 4]
+  intersection_min_frequency: 1
+  dictionary_min_frequency: 2
+  statistical_min_frequencies: [5, 4, 3]
+  statistical_min_dpmi: 5.0
+  statistical_min_entropy: 0.5
+  whole_word_probability: 0.50
+  ranking_negatives: 5
+  ranking_loss_weight: 0.30
+  ranking_warmup_steps: 500
+  encoder_learning_rate: 0.00005
+  head_learning_rate: 0.0003
+  batch_size: 32
+  max_steps: 50000
+  weight_decay: 0.01
+  warmup_ratio: 0.10
+  eval_interval: 200
+  log_interval: 50
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 1.0
+
+knowledge:
+  domain:
+    enabled: true
+    dimension: 2
+    # 外层训练折内再按文献生成OOF领域特征。
+    inner_folds: 5
+    smoothing: 1.0
+    # 低频词/字向[0.5, 0.5]收缩，避免偶然一次出现形成极端倾向。
+    shrinkage: 2.0
+    # fusion=辞书候选＋D2统计候选；也可改成lexicon只保留辞书候选。
+    candidate_mode: fusion
+  # E2固定使用辞书候选，不加入E1领域分布或D2纯统计候选。
+  lexicon:
+    enabled: true
+    dictionary_path: ../xixia_seg/corpus/西夏文词典.json
+    tongyin_path: ../xixia_seg/corpus/同音.json
+    candidate_lengths: [2, 3, 4]
+    representation: gap_lattice
+    use_source_features: true
+    # 外部辞书可为测试文献中的训练未见词提供知识。
+    include_unseen_terms: true
+  # E3在E2的15维软词典格网上追加8维上下文统计。
+  context:
+    enabled: true
+    # key为当前len25语料的文件stem；value为行号一一对应的未截长clean语料。
+    source_mapping:
+      all_jingshu_len25: corpus/all_jingshu.txt
+      all_shisu_len25: corpus/all_shisu.txt
+    inner_folds: 5
+    # 可选：dpmi / t_score / dice。改变这里即可进行关联度量对比。
+    association: t_score
+    dpmi_discount: 0.5
+    # dPMI按正值分位数截断；t-score按绝对值分位数对称截断。
+    clipping_percentile: 99.0
+    dimension: 8
+  # E4在E3（t-score）的23维特征上追加压缩后的冻结CRF软分词知识。
+  segmentation:
+    enabled: true
+    model_path: ../xixia_seg/saved_models/CRF_model.joblib
+    lexicon_path: ../xixia_seg/saved_models/CRF_lexicon.pkl
+    gap_path: ../xixia_seg/saved_models/CRF_gap.pkl
+    # 这两份人工分词语料参与过上方CRF模型训练，仅用于精确重叠审计。
+    annotation_paths:
+      - ../xixia_seg/corpus/jingshu.txt
+      - ../xixia_seg/corpus/shisu.txt
+    # 正式结果必须使用mask_exact；allow只能作为潜在污染上界分析。
+    overlap_policy: mask_exact
+    min_overlap_length: 4
+    max_word_length: 5
+    # compact=3维（软词界概率、硬词界、置信度）；full=旧实验的8维原始特征。
+    representation: compact
+    # gated_residual=零初始化门控残差；direct=直接拼接（用于复现旧E4）。
+    fusion: gated_residual
+    dimension: 3
+  # E5在位置和类别两个阶段都使用该词性通道；E6仅在类别阶段使用。
+  # 两者都以E3为基线，不累加E4分词通道；冻结CRF-Joint-full只提供软词性后验。
+  pos:
+    enabled: true
+    model_path: ../xixia_seg/saved_models/POS_CRF_joint_full.joblib
+    lexicon_state_path: ../xixia_seg/saved_models/POS_CRF_joint_full_lexicon.pkl
+    manifest_path: ../xixia_seg/saved_models/POS_CRF_joint_full_manifest.json
+    annotation_paths:
+      - ../xixia_seg/corpus/all_cleaned.txt
+    # 36类POS的B/I/E/S边缘概率先合并为当前字符自身的7组软概率，
+    # 再加该字符的归一化词性置信度，共8维。
+    representation: coarse_soft_character
+    group_scheme: seven
+    raw_dimension: 8
+    # direct=8维原始概率及置信度直接拼接；projected可复现8→4投影版本。
+    fusion: direct
+    # 仅fusion=projected时生效。
+    projection_dimension: 4
+    # 训练时按序列样本整体丢弃POS通道，降低对有噪外部标注的依赖。
+    channel_dropout: 0.20
+    # 当前精确审计无重叠；若以后更换语料，发现重叠立即停止。
+    overlap_policy: error
+    min_overlap_length: 4
+  # E7/E8不使用上面的7组粗粒度表示，而是复用同一冻结CRF资源，保留
+  # BIES×36类联合边缘概率，构造标点位置左右的细粒度词性关系。
+  # E7在位置和类别两个阶段都使用，并把76维关系与E3的23维知识直接
+  # 拼接进各自的BiLSTM，不使用投影、门控、残差或lambda选择。
+  # E8仍在位置与类别两个阶段使用下列残差超参数；两个阶段各自训练
+  # 独立模型，不共享已学习权重。
+  pos_relation:
+    enabled: true
+    tag_embedding_dim: 8
+    relation_hidden_dim: 16
+    relation_dropout: 0.20
+    # 仅供E8残差分支使用。E7两个阶段的直接拼接都不做整通道dropout，
+    # 训练和推理时始终输入完整76维词性关系。
+    channel_dropout: 0.20
+    # sigmoid(-2)≈0.119，初始只允许词性分支做小幅修正。
+    gate_bias: -2.0
+    learning_rate: 0.001
+    epochs: 10
+    patience: 3
+    min_delta: 0.0001
+    # 由开发集类别Micro-F1选择；0表示完全退回E3。
+    fusion_weight_candidates: [0.0, 0.25, 0.5, 0.75, 1.0]
+
+# E9复用C4的共享编码器多任务目标：
+# L = L(O＋七类完整标点) + weight × L(O/P位置)。
+# C4消融中0.2取得最佳类别Micro-F1，因此E9固定使用该值，不额外搜索测试折。
+cascade:
+  multitask_position_loss_weight: 0.2
+
+# E9-Aug只在每个外层训练折内部生成合成块；E9本身忽略该配置，因而可作为
+# 完全相同模型和五折划分下的不增强对照。
+data_augmentation:
+  enabled: true
+  method: sentence_concatenation
+  # 保留全部原始训练块，再加入约等量合成块（原始:增强≈1:1）。
+  ratio: 1.0
+  # 只按。？！识别完整句；，、：；不是切句点。
+  min_sentences: 2
+  max_sentences: 4
+  min_characters: 64
+  # 必须不超过全局max_sequence_length，避免拼接后再次截断。
+  max_characters: 128
+  # 不跨文献、不跨经书/世俗领域；抽到的句子仍按原文先后次序拼接。
+  scope: same_document
+  preserve_order: true
+
+neural:
+  # D4最优BiLSTM配置保持不变；embedding_dim仍只表示上游O/P特征维度。
+  embedding_dim: 32
+  dropout: 0.2
+  batch_size: 16
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 5.0
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+  position_threshold_start: 0.05
+  position_threshold_end: 0.95
+  position_threshold_step: 0.05
+  bilstm_hidden_dim: 128
+  bilstm_layers: 4
+  transformer_layers: 3
+  transformer_heads: 4
+  transformer_ff_dim: 768

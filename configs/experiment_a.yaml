@@ -1,0 +1,58 @@
+seed: 42
+folds: 5
+# 每折测试集约占20%；剩余80%中抽12.5%为开发集，总体约为7:1:2。
+dev_ratio: 0.125
+max_sequence_length: 500
+
+data:
+  # 每行是一部文献；TAB表示删除长片段后形成的独立训练块。
+  sources:
+    - path: corpus/all_jingshu_len25.txt
+      domain: jingshu
+    - path: corpus/all_shisu_len25.txt
+      domain: shisu
+  missing_volume_numbers: []
+  missing_characters: ["□", "@", "…"]
+  ignored_editorial_symbols: ["√", "×", "△"]
+
+punctuation:
+  # 主实验 A 的七种目标标点；结构标点留给后续实验 B。
+  sentence_pause: ["。", "？", "！"]
+  intra_sentence_pause: ["，", "、", "；", "："]
+  # 读取语料和纯净性检查时仍需声明，但不进入主实验 A 标签。
+  structural: ["“", "”", "‘", "’", "《", "》"]
+
+features:
+  window: 3
+  use_ngrams: true
+  use_missing: true
+  use_document_edges: true
+  use_stage_features: true
+  stage_feature_window: 1
+
+# 使用 --model bilstm 复核A1/A2/A3时采用；与主实验B的BiLSTM配置一致。
+neural:
+  embedding_dim: 32
+  dropout: 0.2
+  batch_size: 16
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 5.0
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+  position_threshold_start: 0.05
+  position_threshold_end: 0.95
+  position_threshold_step: 0.05
+  bilstm_hidden_dim: 128
+  bilstm_layers: 4
+
+model:
+  name: crf
+  c1: 1.0
+  c2: 0.001
+  max_iterations: 200
+  all_possible_transitions: true

@@ -1,0 +1,154 @@
+seed: 42
+# D1下游标点评测按128字切块，与预训练位置嵌入上限一致。
+max_sequence_length: 128
+
+data:
+  # D1只读取本项目当前的纯净标点语料；读取时移除标点，保留西夏字和缺字占位。
+  sources:
+    - path: corpus/all_jingshu_len25.txt
+      domain: jingshu
+    - path: corpus/all_shisu_len25.txt
+      domain: shisu
+  missing_volume_numbers: []
+  missing_characters: ["□", "@", "…"]
+  ignored_editorial_symbols: ["√", "×", "△"]
+
+punctuation:
+  sentence_pause: ["。", "？", "！"]
+  intra_sentence_pause: ["，", "、", "；", "："]
+  structural: ["“", "”", "‘", "’", "《", "》"]
+
+pretraining:
+  stage: context_mlm
+
+  # 按文献、分领域抽取10%作为固定开发集，仅用于MLM早停。
+  validation_ratio: 0.10
+  # TAB仍是硬边界；长块顺序切分，不跨TAB拼接。
+  min_sequence_length: 4
+  max_sequence_length: 128
+
+  # 15%字符作为预测目标；一半遮盖操作优先选择连续2—4字片段。
+  mask_ratio: 0.15
+  span_mask_probability: 0.50
+  span_lengths: [2, 3, 4]
+  # BERT式80/10/10：MASK / 随机字 / 原字不变。
+  mask_replace_probability: 0.80
+  random_replace_probability: 0.10
+
+  # 与xixia_seg的小型TangutEncoder保持同一量级，但完全重新训练。
+  embedding_dim: 192
+  layers: 3
+  heads: 4
+  ff_dim: 768
+  dropout: 0.15
+
+  batch_size: 32
+  max_steps: 50000
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  warmup_ratio: 0.10
+  eval_interval: 200
+  log_interval: 50
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 1.0
+
+  # 与现有B/C实验一致：auto优先选择满足条件且空闲显存最多的GPU。
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+
+  # D1完成后，用同一checkpoint进行五折自动标点微调。
+  checkpoint: outputs_d/D1/tangut_encoder_mlm/best_model.pt
+  downstream_encoder_learning_rate: 0.00005
+  downstream_head_learning_rate: 0.001
+  downstream_freeze_epochs: 1
+
+# D2从D1最佳checkpoint继续训练；D2-Control、D2-Lex和D2-Fusion共享以下训练量，
+# 仅候选来源及训练目标不同，便于做严格的等步数对照。
+word_pretraining:
+  initial_checkpoint: outputs_d/D1/tangut_encoder_mlm/best_model.pt
+  # d2_eval未显式给--checkpoint时默认读取这里。
+  checkpoint: outputs_d/D2/tangut_encoder_word/best_model.pt
+  dictionary_path: ../xixia_seg/corpus/西夏文词典.json
+  tongyin_path: ../xixia_seg/corpus/同音.json
+
+  candidate_lengths: [2, 3, 4]
+  # 两种辞书都有的候选出现1次即可；只见于一种辞书时至少出现2次。
+  intersection_min_frequency: 1
+  dictionary_min_frequency: 2
+  # 纯统计候选按2/3/4字分别至少出现5/4/3次。
+  statistical_min_frequencies: [5, 4, 3]
+  # 真实训练集上dpmi=1会产生约3.1万种统计组合，噪声过大；以下阈值将
+  # 纯统计候选压到约2千种，再由辞书候选补足二字词。
+  statistical_min_dpmi: 5.0
+  statistical_min_entropy: 0.5
+
+  # 正式D2的batch内普通MLM与整词MLM约各占一半。
+  whole_word_probability: 0.50
+  ranking_negatives: 5
+  ranking_loss_weight: 0.30
+  ranking_warmup_steps: 500
+
+  encoder_learning_rate: 0.00005
+  head_learning_rate: 0.0003
+  batch_size: 32
+  max_steps: 50000
+  weight_decay: 0.01
+  warmup_ratio: 0.10
+  eval_interval: 200
+  log_interval: 50
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 1.0
+
+d_downstream:
+  # D3/D4未传--init-from时使用的默认来源；命令行可分别切换为d1或d2。
+  # --checkpoint始终具有最高优先级。
+  initialization_source: d1
+
+punctuation_pretraining:
+  # D5严格在每个外层折的训练文献上训练、开发文献上早停，测试文献不参与。
+  batch_size: 32
+  max_steps: 10000
+  encoder_learning_rate: 0.00002
+  head_learning_rate: 0.0003
+  weight_decay: 0.01
+  warmup_ratio: 0.10
+  eval_interval: 200
+  log_interval: 50
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 1.0
+  # 总损失中四个任务都先按各自有效位置求平均，再按以下权重相加。
+  mlm_weight: 0.25
+  position_weight: 1.0
+  group_weight: 0.5
+  type_weight: 1.0
+  position_threshold_start: 0.05
+  position_threshold_end: 0.95
+  position_threshold_step: 0.05
+
+neural:
+  # 控制D1/D2下游评测及D3/D4。D4的BiLSTM参数与B4最优配置一致；
+  # 字符表示来自TangutEncoder，embedding_dim=32用于上游O/P特征嵌入。
+  embedding_dim: 32
+  dropout: 0.2
+  batch_size: 16
+  epochs: 30
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 5.0
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+  position_threshold_start: 0.05
+  position_threshold_end: 0.95
+  position_threshold_step: 0.05
+  bilstm_hidden_dim: 128
+  bilstm_layers: 4
+  transformer_layers: 3
+  transformer_heads: 4
+  transformer_ff_dim: 768

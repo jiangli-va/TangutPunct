@@ -1,0 +1,66 @@
+seed: 42
+folds: 5
+# 外层20%测试；其余文献中抽12.5%作开发集，整体约7:1:2。
+dev_ratio: 0.125
+max_sequence_length: 200
+
+data:
+  sources:
+    - path: corpus/all_jingshu_len25.txt
+      domain: jingshu
+    - path: corpus/all_shisu_len25.txt
+      domain: shisu
+  missing_volume_numbers: []
+  missing_characters: ["□", "@", "…"]
+  ignored_editorial_symbols: ["√", "×", "△"]
+
+punctuation:
+  sentence_pause: ["。", "？", "！"]
+  intra_sentence_pause: ["，", "、", "；", "："]
+  structural: ["“", "”", "‘", "’", "《", "》"]
+
+neural:
+  # 与B4最优BiLSTM保持一致，C组只改变信息传递和训练目标。
+  embedding_dim: 32
+  dropout: 0.2
+  batch_size: 16
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 5.0
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+  position_threshold_start: 0.05
+  position_threshold_end: 0.95
+  position_threshold_step: 0.05
+  bilstm_hidden_dim: 128
+  bilstm_layers: 4
+  # 由共享NeuralConfig保留，C1—C4不使用随机Transformer。
+  transformer_layers: 3
+  transformer_heads: 4
+  transformer_ff_dim: 256
+
+cascade:
+  # C2/C3的外层训练集内部折外上游预测。
+  inner_folds: 3
+  # C2在开发集上选择达到该召回率的候选阈值。
+  candidate_recall_target: 0.95
+  # C3训练先验强度与开发集搜索范围。
+  soft_train_alpha: 1.0
+  soft_alpha_candidates: [0.25, 0.5, 1.0, 2.0]
+  soft_epsilon: 0.00000001
+  # C4：L = L_punctuation + weight * L_position。
+  multitask_position_loss_weight: 0.2
+  # 未来注册TangutEncoder后只需在这里改编码器名，两个任务头不变。
+  shared_encoder: bilstm
+
+# C1—C4均由实验声明指定BiLSTM后端，此项仅保留通用配置兼容性。
+model:
+  name: crf
+  c1: 1.0
+  c2: 0.001
+  max_iterations: 200
+  all_possible_transitions: true

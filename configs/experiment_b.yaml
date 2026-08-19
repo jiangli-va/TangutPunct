@@ -1,0 +1,92 @@
+seed: 42
+folds: 5
+# 与主实验A完全相同：外层20%测试，剩余部分抽12.5%作开发集。
+dev_ratio: 0.125
+max_sequence_length: 200
+
+data:
+  # 每行是一部文献；TAB是删除长片段后形成的独立规则扫描块。
+  sources:
+    - path: corpus/all_jingshu_len25.txt
+      domain: jingshu
+    - path: corpus/all_shisu_len25.txt
+      domain: shisu
+  missing_volume_numbers: []
+  missing_characters: ["□", "@", "…"]
+  ignored_editorial_symbols: ["√", "×", "△"]
+
+punctuation:
+  sentence_pause: ["。", "？", "！"]
+  intra_sentence_pause: ["，", "、", "；", "："]
+  # 只用于语料纯净性检查；B0/B1不预测，也不把它们作为规则特征。
+  structural: ["“", "”", "‘", "’", "《", "》"]
+
+rules:
+  # B1只保留训练折内达到以下阈值的可解释规则；开发/测试折不参与生成。
+  cue_min_support: 8
+  cue_min_confidence: 0.70
+  structure_min_support: 8
+  structure_min_confidence: 0.55
+  cue_max_length: 2
+  force_document_final_period: true
+
+ngram:
+  # 最大字符上下文阶数；可改为1、2、3……，无需改代码。
+  n: 2
+  min_support: 5
+  alpha: 0.5
+  backoff_k: 10.0
+  # 第一阶段在每折开发集上选择位置F1最高的阈值。
+  threshold_start: 0.05
+  threshold_end: 0.95
+  threshold_step: 0.05
+  use_left: true
+  use_right: true
+  use_cross_gap: true
+
+neural:
+  # B4/B5/B6都从随机初始化的字符嵌入开始训练，不读取任何预训练向量。
+  embedding_dim: 32
+  dropout: 0.2
+  batch_size: 16
+  epochs: 30
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 5.0
+  # auto会在PyTorch可见GPU中选择满足以下条件且空闲显存最多的一块。
+  # 若检测到GPU但全部繁忙，程序会报出每块卡的状态，不会擅自抢占。
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+  position_threshold_start: 0.05
+  position_threshold_end: 0.95
+  position_threshold_step: 0.05
+  bilstm_hidden_dim: 128
+  bilstm_layers: 4
+  transformer_layers: 3
+  transformer_heads: 4
+  transformer_ff_dim: 256
+
+# 主实验C沿用上面的BiLSTM最优参数，只改变误差传播处理方式。
+cascade:
+  # C2/C3外层训练集内部的折外预测折数；越大越严格，但训练更慢。
+  inner_folds: 3
+  # C2候选生成目标：开发集候选召回率至少达到95%。
+  candidate_recall_target: 0.95
+  # C3训练时的位置概率先验强度，以及开发集选择的候选强度。
+  soft_train_alpha: 1.0
+  soft_alpha_candidates: [0.25, 0.5, 1.0, 2.0]
+  soft_epsilon: 0.00000001
+  # C4总损失 = 标点损失 + 该权重 × 位置辅助损失。
+  multitask_position_loss_weight: 0.5
+  shared_encoder: bilstm
+
+# B3直接复用A2的CRF参数；B0/B1/B2/B4/B5/B6由实验声明覆盖后端。
+model:
+  name: crf
+  c1: 1.0
+  c2: 0.001
+  max_iterations: 200
+  all_possible_transitions: true

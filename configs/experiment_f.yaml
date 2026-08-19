@@ -1,0 +1,76 @@
+# 主实验F：在当前最优E9主干上直接训练粗粒度停顿类别。
+# 唯一主变量是监督标签由 O＋七种具体标点改为 O＋句内＋句间。
+seed: 42
+folds: 5
+dev_ratio: 0.125
+max_sequence_length: 128
+
+data:
+  sources:
+    - path: corpus/all_jingshu_len25.txt
+      domain: jingshu
+    - path: corpus/all_shisu_len25.txt
+      domain: shisu
+  missing_volume_numbers: []
+  missing_characters: ["□", "@", "…"]
+  ignored_editorial_symbols: ["√", "×", "△"]
+
+punctuation:
+  sentence_pause: ["。", "？", "！"]
+  intra_sentence_pause: ["，", "、", "；", "："]
+  structural: ["“", "”", "‘", "’", "《", "》"]
+
+# 与E9完全相同：从D2词语感知预训练checkpoint初始化并微调。
+pretraining:
+  checkpoint: outputs_d/D2/tangut_encoder_word/best_model.pt
+  downstream_encoder_learning_rate: 0.00005
+  downstream_head_learning_rate: 0.001
+  downstream_freeze_epochs: 1
+
+# 与E9完全相同的E3知识：15维软词典格网＋8维t-score上下文。
+knowledge:
+  lexicon:
+    enabled: true
+    dictionary_path: ../xixia_seg/corpus/西夏文词典.json
+    tongyin_path: ../xixia_seg/corpus/同音.json
+    candidate_lengths: [2, 3, 4]
+    representation: gap_lattice
+    use_source_features: true
+    include_unseen_terms: true
+  context:
+    enabled: true
+    source_mapping:
+      all_jingshu_len25: corpus/all_jingshu.txt
+      all_shisu_len25: corpus/all_shisu.txt
+    inner_folds: 5
+    association: t_score
+    dpmi_discount: 0.5
+    clipping_percentile: 99.0
+    dimension: 8
+
+# L = CE(O/句内/句间) + 0.2 × CE(O/P位置)。
+cascade:
+  multitask_position_loss_weight: 0.2
+
+# D4搜索所得、E9沿用的最优BiLSTM配置。
+neural:
+  embedding_dim: 32
+  dropout: 0.2
+  batch_size: 16
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  patience: 5
+  min_delta: 0.0001
+  gradient_clip: 5.0
+  device: auto
+  cuda_max_utilization: 20
+  cuda_min_free_memory_gb: 4.0
+  position_threshold_start: 0.05
+  position_threshold_end: 0.95
+  position_threshold_step: 0.05
+  bilstm_hidden_dim: 128
+  bilstm_layers: 4
+  transformer_layers: 3
+  transformer_heads: 4
+  transformer_ff_dim: 768
