@@ -58,7 +58,7 @@ xixia_senseg/
 ├── reporting_main.py      # 主实验报告（结果表、逐类指标）
 ├── requirements.txt
 ├── configs/               # YAML 实验配置（experiment_{a,b,c,d,e,f}.yaml）
-├── corpus/                # 训练语料（不公开）
+├── corpus/                # 训练语料（暂不公开）
 ├── data/                  # 语料读取、标签、五折划分、数据增强
 ├── models/                # CRF、n-gram、BiLSTM、Transformer、TangutEncoder 等模型
 ├── pretraining/           # D1 上下文 MLM、D2 词感知预训练、D5 预训练标点
